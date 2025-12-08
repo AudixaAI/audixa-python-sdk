@@ -498,30 +498,34 @@ class AudixaClient:
         
         return str(output_path)
     
-    def list_voices(self) -> list[dict[str, Any]]:
+    def list_voices(self, model: Model = "base") -> list[dict[str, Any]]:
         """
-        List available voices.
+        List available voices for a specific model.
+        
+        Args:
+            model: The model to fetch voices for: "base" or "advance".
         
         Returns:
             List of voice dictionaries, each containing:
-            - id: Voice ID for use in tts()
+            - voice_id: Voice ID for use in tts()
             - name: Display name
-            - language: Language code
-            - gender: Voice gender
-            - (additional fields may vary)
+            - gender: Voice gender (e.g., "Male", "Female")
+            - accent: Voice accent (e.g., "American", "British")
+            - free: Whether the voice is free tier
+            - description: Voice description
             
         Example:
-            >>> voices = client.list_voices()
+            >>> voices = client.list_voices(model="base")
             >>> for voice in voices:
-            ...     print(f"{voice['id']}: {voice['name']}")
+            ...     print(f"{voice['voice_id']}: {voice['name']}")
         
         See Also:
             Audixa documentation: https://docs.audixa.ai/api/voices
         """
-        logger.debug("Fetching available voices")
-        response = self._request("GET", ENDPOINTS["voices"])
+        logger.debug(f"Fetching available voices for model: {model}")
+        response = self._request("GET", ENDPOINTS["voices"], params={"model": model})
         voices = response.get("voices", [])
-        logger.info(f"Found {len(voices)} available voices")
+        logger.info(f"Found {len(voices)} available voices for {model} model")
         return voices
     
     def close(self) -> None:

@@ -213,19 +213,22 @@ def tts_to_file(
     )
 
 
-def list_voices() -> list[dict[str, Any]]:
+def list_voices(model: Model = "base") -> list[dict[str, Any]]:
     """
-    List available voices (synchronous).
+    List available voices for a specific model (synchronous).
+    
+    Args:
+        model: The model to fetch voices for: "base" or "advance".
     
     Returns:
-        List of voice dictionaries.
+        List of voice dictionaries with voice_id, name, gender, accent, etc.
         
     Example:
-        >>> voices = audixa.list_voices()
+        >>> voices = audixa.list_voices(model="base")
         >>> for v in voices:
-        ...     print(v["name"])
+        ...     print(v["voice_id"], v["name"])
     """
-    return _get_default_client().list_voices()
+    return _get_default_client().list_voices(model=model)
 
 
 # =============================================================================
@@ -394,14 +397,17 @@ async def atts_to_file(
     )
 
 
-async def alist_voices() -> list[dict[str, Any]]:
+async def alist_voices(model: Model = "base") -> list[dict[str, Any]]:
     """
-    List available voices (asynchronous).
+    List available voices for a specific model (asynchronous).
+    
+    Args:
+        model: The model to fetch voices for: "base" or "advance".
     
     Returns:
-        List of voice dictionaries.
+        List of voice dictionaries with voice_id, name, gender, accent, etc.
         
     Example:
-        >>> voices = await audixa.alist_voices()
+        >>> voices = await audixa.alist_voices(model="advance")
     """
-    return await _get_default_async_client().list_voices()
+    return await _get_default_async_client().list_voices(model=model)

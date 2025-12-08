@@ -508,31 +508,35 @@ class AsyncAudixaClient:
         
         return str(output_path)
     
-    async def list_voices(self) -> list[dict[str, Any]]:
+    async def list_voices(self, model: Model = "base") -> list[dict[str, Any]]:
         """
-        List available voices asynchronously.
+        List available voices for a specific model asynchronously.
+        
+        Args:
+            model: The model to fetch voices for: "base" or "advance".
         
         Returns:
             List of voice dictionaries, each containing:
-            - id: Voice ID for use in tts()
+            - voice_id: Voice ID for use in tts()
             - name: Display name
-            - language: Language code
-            - gender: Voice gender
-            - (additional fields may vary)
+            - gender: Voice gender (e.g., "Male", "Female")
+            - accent: Voice accent (e.g., "American", "British")
+            - free: Whether the voice is free tier
+            - description: Voice description
             
         Example:
             >>> async with AsyncAudixaClient(api_key="your-key") as client:
-            ...     voices = await client.list_voices()
+            ...     voices = await client.list_voices(model="base")
             ...     for voice in voices:
-            ...         print(f"{voice['id']}: {voice['name']}")
+            ...         print(f"{voice['voice_id']}: {voice['name']}")
         
         See Also:
             Audixa documentation: https://docs.audixa.ai/api/voices
         """
-        logger.debug("Fetching available voices")
-        response = await self._request("GET", ENDPOINTS["voices"])
+        logger.debug(f"Fetching available voices for model: {model}")
+        response = await self._request("GET", ENDPOINTS["voices"], params={"model": model})
         voices = response.get("voices", [])
-        logger.info(f"Found {len(voices)} available voices")
+        logger.info(f"Found {len(voices)} available voices for {model} model")
         return voices
     
     async def close(self) -> None:
