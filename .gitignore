@@ -1,0 +1,6 @@
+audixa.egg-info
+audixa.egg-info/PKG-INFO
+dist
+audixa/__pycache__
+examples
+.env
