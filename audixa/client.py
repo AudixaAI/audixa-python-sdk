@@ -1,7 +1,7 @@
 """
 Audixa Synchronous Client.
 
-Provides the AudixaClient class for synchronous API interactions.
+Provides the AudixaClient class for synchronous API interactions (v3).
 """
 
 from __future__ import annotations
@@ -12,12 +12,12 @@ from typing import Any, Literal
 import requests
 
 from .config import (
-    DEFAULT_BASE_URL,
     DEFAULT_MAX_RETRIES,
     DEFAULT_POLL_INTERVAL,
     DEFAULT_TIMEOUT,
     DEFAULT_WAIT_TIMEOUT,
     ENDPOINTS,
+    SDK_VERSION,
     AudioFormat,
     get_config,
 )
@@ -28,9 +28,9 @@ from .exceptions import (
     NetworkError,
     RateLimitError,
     TimeoutError,
+    ValidationError,
 )
 from .utils import (
-    build_url,
     download_file_sync,
     logger,
     retry_sync,
@@ -39,8 +39,7 @@ from .utils import (
 )
 
 # Type aliases for TTS parameters
-Model = Literal["base", "advance"]
-Emotion = Literal["neutral", "happy", "sad", "angry", "surprised"]
+Model = Literal["base", "advanced"]
 
 
 class AudixaClient:
@@ -53,25 +52,26 @@ class AudixaClient:
     Args:
         api_key: Your Audixa API key. If not provided, falls back to
             the AUDIXA_API_KEY environment variable or global config.
-        base_url: API base URL. Defaults to https://api.audixa.ai/v2.
+        base_url: API base URL. Defaults to https://api.audixa.ai.
         timeout: Request timeout in seconds.
         max_retries: Maximum number of retries for failed requests.
+        custom_endpoint_slug: Optional custom endpoint slug for dedicated routing.
     
     Example:
         >>> client = AudixaClient(api_key="your-api-key")
-        >>> gen_id = client.tts("Hello, world!", voice="am_ethan")
+        >>> gen_id = client.tts("Hello, world!", voice_id="emma")
         >>> status = client.status(gen_id)
         >>> if status["status"] == "completed":
         ...     print(status["audio_url"])
     
     Example (convenience method):
         >>> client = AudixaClient(api_key="your-api-key")
-        >>> audio_url = client.tts_and_wait("Hello, world!", voice="am_ethan")
+        >>> audio_url = client.tts_and_wait("Hello, world!", voice_id="emma")
         >>> print(audio_url)
     
     Example (save to file):
         >>> client = AudixaClient(api_key="your-api-key")
-        >>> filepath = client.tts_to_file("Hello!", "output.wav", voice="am_ethan")
+        >>> filepath = client.tts_to_file("Hello!", "output.wav", voice_id="emma")
         >>> print(f"Saved to {filepath}")
     """
     
@@ -81,6 +81,7 @@ class AudixaClient:
         base_url: str | None = None,
         timeout: float = DEFAULT_TIMEOUT,
         max_retries: int = DEFAULT_MAX_RETRIES,
+        custom_endpoint_slug: str | None = None,
     ) -> None:
         """Initialize the Audixa client."""
         config = get_config()
@@ -88,6 +89,7 @@ class AudixaClient:
         self._base_url = (base_url or config.base_url).rstrip("/")
         self._timeout = timeout
         self._max_retries = max_retries
+        self._custom_endpoint_slug = custom_endpoint_slug or config.custom_endpoint_slug
         self._session: requests.Session | None = None
     
     @property
@@ -99,6 +101,16 @@ class AudixaClient:
     def api_key(self, value: str) -> None:
         """Set the API key."""
         self._api_key = value
+
+    @property
+    def custom_endpoint_slug(self) -> str | None:
+        """Get the custom endpoint slug (if enabled)."""
+        return self._custom_endpoint_slug
+
+    @custom_endpoint_slug.setter
+    def custom_endpoint_slug(self, value: str | None) -> None:
+        """Set or clear the custom endpoint slug."""
+        self._custom_endpoint_slug = value or None
     
     def _get_session(self) -> requests.Session:
         """Get or create the requests session."""
@@ -114,10 +126,40 @@ class AudixaClient:
                 "audixa.set_api_key(...), or the AUDIXA_API_KEY environment variable."
             )
         return {
-            "x-api-key": self._api_key,
+            "X-API-Key": self._api_key,
+            "Authorization": f"Bearer {self._api_key}",
             "Content-Type": "application/json",
-            "User-Agent": "audixa-python/0.1.0",
+            "User-Agent": f"audixa-python/{SDK_VERSION}",
         }
+
+    def _normalize_model(self, model: str) -> str:
+        """Normalize model names for API compatibility."""
+        if model == "advance":
+            return "advanced"
+        return model
+
+    def _resolve_custom_slug(self, custom_endpoint_slug: str | None) -> str | None:
+        if custom_endpoint_slug is not None:
+            return custom_endpoint_slug
+        return self._custom_endpoint_slug
+
+    def _get_tts_endpoint(self, custom_endpoint_slug: str | None) -> str:
+        slug = self._resolve_custom_slug(custom_endpoint_slug)
+        if slug:
+            return ENDPOINTS["custom_tts"].format(slug=slug)
+        return ENDPOINTS["tts"]
+
+    def _get_status_endpoint(
+        self, generation_id: str, custom_endpoint_slug: str | None
+    ) -> tuple[str, dict[str, Any] | None]:
+        slug = self._resolve_custom_slug(custom_endpoint_slug)
+        if slug:
+            endpoint = ENDPOINTS["custom_generation"].format(
+                slug=slug, generation_id=generation_id
+            )
+            return endpoint, None
+        return ENDPOINTS["tts"], {"generation_id": generation_id}
+
     
     def _handle_response(
         self,
@@ -142,28 +184,35 @@ class AudixaClient:
         try:
             data = response.json()
         except ValueError:
-            data = {"error": response.text or "Unknown error"}
+            data = {"detail": response.text or "Unknown error"}
+        
+        message = (
+            data.get("detail")
+            or data.get("error")
+            or data.get("message")
+            or f"API error: {response.status_code}"
+        )
         
         success_codes = [200, 201] if accept_201 else [200]
         if response.status_code in success_codes:
             return data
         elif response.status_code == 401:
             raise AuthenticationError(
-                message=data.get("error", "Authentication failed"),
+                message=message,
                 status_code=response.status_code,
                 response_data=data,
             )
         elif response.status_code == 429:
             retry_after = response.headers.get("Retry-After")
             raise RateLimitError(
-                message=data.get("error", "Rate limit exceeded"),
+                message=message,
                 status_code=response.status_code,
                 response_data=data,
                 retry_after=float(retry_after) if retry_after else None,
             )
         else:
             raise APIError(
-                message=data.get("error", f"API error: {response.status_code}"),
+                message=message,
                 status_code=response.status_code,
                 response_data=data,
             )
@@ -173,7 +222,7 @@ class AudixaClient:
         method: str,
         endpoint: str,
         json: dict[str, Any] | None = None,
-        params: dict[str, str] | None = None,
+        params: dict[str, Any] | None = None,
         accept_201: bool = False,
     ) -> dict[str, Any]:
         """
@@ -217,14 +266,13 @@ class AudixaClient:
     def tts(
         self,
         text: str,
-        voice: str,
+        voice_id: str | None = None,
         model: Model = "base",
         speed: float = 1.0,
-        # Advance model parameters
-        emotion: Emotion | None = None,
-        temperature: float | None = None,
-        top_p: float | None = None,
-        do_sample: bool | None = None,
+        cfg_weight: float | None = None,
+        exaggeration: float | None = None,
+        audio_format: AudioFormat | None = None,
+        custom_endpoint_slug: str | None = None,
         **kwargs: Any,
     ) -> str:
         """
@@ -235,15 +283,15 @@ class AudixaClient:
         convenience.
         
         Args:
-            text: The text to convert to speech. Must be at least 30 characters.
-            voice: The Voice ID to use for generation (e.g., "am_ethan").
-            model: The model to use: "base" or "advance". Defaults to "base".
+            text: The text to convert to speech.
+            voice_id: The Voice ID to use (e.g., "emma"). For compatibility,
+                you may also pass `voice` in kwargs.
+            model: The model to use: "base" or "advanced". Defaults to "base".
             speed: Playback speed (0.5 to 2.0). Defaults to 1.0.
-            emotion: (Advance model only) Emotion to apply: "neutral", "happy", 
-                "sad", "angry", or "surprised". Defaults to "neutral".
-            temperature: (Advance model only) Controls randomness (0.7 to 0.9).
-            top_p: (Advance model only) Nucleus sampling (0.7 to 0.98).
-            do_sample: (Advance model only) Enable sampling for varied outputs.
+            cfg_weight: (Advanced model only) CFG weight (1.0 to 5.0).
+            exaggeration: (Advanced model only) Exaggeration (0.0 to 1.0).
+            audio_format: Output format ("wav" or "mp3"). Defaults to "wav".
+            custom_endpoint_slug: Optional custom endpoint slug to route this request.
             **kwargs: Additional parameters passed to the API.
             
         Returns:
@@ -260,41 +308,42 @@ class AudixaClient:
             >>> client = AudixaClient(api_key="your-key")
             >>> gen_id = client.tts(
             ...     "Hello, world! Welcome to Audixa AI.",
-            ...     voice="am_ethan",
+            ...     voice_id="emma",
             ...     model="base",
             ...     speed=1.1,
             ... )
             >>> print(gen_id)
         
-        See Also:
-            Voice Library: https://docs.audixa.ai/voices
-            Models Guide: https://docs.audixa.ai/models
         """
         text = validate_text(text)
-        
+        voice_alias = kwargs.pop("voice", None)
+        if voice_id and voice_alias and voice_id != voice_alias:
+            raise ValidationError("Provide only one of voice_id or voice.")
+        voice_id = voice_id or voice_alias
+        if not voice_id:
+            raise ValidationError("voice_id is required.")
+
+        model_normalized = self._normalize_model(model)
         payload: dict[str, Any] = {
             "text": text,
-            "voice": voice,
-            "model": model,
+            "voice_id": voice_id,
+            "model": model_normalized,
             "speed": speed,
+            "audio_format": audio_format or get_config().default_format,
         }
-        
-        # Add advance model parameters if provided
-        if model == "advance":
-            if emotion is not None:
-                payload["emotion"] = emotion
-            if temperature is not None:
-                payload["temperature"] = temperature
-            if top_p is not None:
-                payload["top_p"] = top_p
-            if do_sample is not None:
-                payload["do_sample"] = do_sample
-        
+
+        if model_normalized == "advanced":
+            if cfg_weight is not None:
+                payload["cfg_weight"] = cfg_weight
+            if exaggeration is not None:
+                payload["exaggeration"] = exaggeration
+
         payload.update(kwargs)
-        
+
         logger.info(f"Starting TTS generation for text: {text[:50]}...")
-        response = self._request("POST", ENDPOINTS["tts"], json=payload, accept_201=True)
-        
+        endpoint = self._get_tts_endpoint(custom_endpoint_slug)
+        response = self._request("POST", endpoint, json=payload)
+
         generation_id = response.get("generation_id") or response.get("id")
         if not generation_id:
             raise APIError("No generation ID in response", response_data=response)
@@ -302,7 +351,11 @@ class AudixaClient:
         logger.info(f"TTS generation started: {generation_id}")
         return generation_id
     
-    def status(self, generation_id: str) -> dict[str, Any]:
+    def status(
+        self,
+        generation_id: str,
+        custom_endpoint_slug: str | None = None,
+    ) -> dict[str, Any]:
         """
         Check the status of a TTS generation.
         
@@ -321,25 +374,21 @@ class AudixaClient:
             ...     print(status["audio_url"])
         """
         logger.debug(f"Checking status for generation: {generation_id}")
-        return self._request(
-            "GET",
-            ENDPOINTS["status"],
-            params={"generation_id": generation_id},
-        )
+        endpoint, params = self._get_status_endpoint(generation_id, custom_endpoint_slug)
+        return self._request("GET", endpoint, params=params)
     
     def tts_and_wait(
         self,
         text: str,
-        voice: str,
+        voice_id: str | None = None,
         model: Model = "base",
         speed: float = 1.0,
         poll_interval: float = DEFAULT_POLL_INTERVAL,
         timeout: float = DEFAULT_WAIT_TIMEOUT,
-        # Advance model parameters
-        emotion: Emotion | None = None,
-        temperature: float | None = None,
-        top_p: float | None = None,
-        do_sample: bool | None = None,
+        cfg_weight: float | None = None,
+        exaggeration: float | None = None,
+        audio_format: AudioFormat | None = None,
+        custom_endpoint_slug: str | None = None,
         **kwargs: Any,
     ) -> str:
         """
@@ -348,16 +397,16 @@ class AudixaClient:
         This is a convenience method that combines tts() and status() polling.
         
         Args:
-            text: The text to convert to speech. Must be at least 30 characters.
-            voice: The Voice ID to use for generation.
-            model: The model to use: "base" or "advance".
+            text: The text to convert to speech.
+            voice_id: The Voice ID to use for generation.
+            model: The model to use: "base" or "advanced".
             speed: Playback speed (0.5 to 2.0).
             poll_interval: Time between status checks in seconds.
             timeout: Maximum time to wait for completion in seconds.
-            emotion: (Advance model only) Emotion to apply.
-            temperature: (Advance model only) Controls randomness.
-            top_p: (Advance model only) Nucleus sampling.
-            do_sample: (Advance model only) Enable sampling.
+            cfg_weight: (Advanced model only) CFG weight.
+            exaggeration: (Advanced model only) Exaggeration level.
+            audio_format: Output format ("wav" or "mp3").
+            custom_endpoint_slug: Optional custom endpoint slug to route this request.
             **kwargs: Additional parameters passed to the API.
             
         Returns:
@@ -370,20 +419,20 @@ class AudixaClient:
         Example:
             >>> audio_url = client.tts_and_wait(
             ...     "Hello, welcome to Audixa AI!",
-            ...     voice="am_ethan",
+            ...     voice_id="emma",
             ...     timeout=120,
             ... )
             >>> print(audio_url)
         """
         generation_id = self.tts(
             text,
-            voice=voice,
+            voice_id=voice_id,
             model=model,
             speed=speed,
-            emotion=emotion,
-            temperature=temperature,
-            top_p=top_p,
-            do_sample=do_sample,
+            cfg_weight=cfg_weight,
+            exaggeration=exaggeration,
+            audio_format=audio_format,
+            custom_endpoint_slug=custom_endpoint_slug,
             **kwargs,
         )
         
@@ -396,12 +445,12 @@ class AudixaClient:
                     timeout_seconds=timeout,
                 )
             
-            status_response = self.status(generation_id)
-            status = status_response.get("status", "unknown")
+            status_response = self.status(generation_id, custom_endpoint_slug=custom_endpoint_slug)
+            status = str(status_response.get("status", "unknown")).upper()
             
             logger.debug(f"Generation {generation_id} status: {status}")
             
-            if status == "Completed":
+            if status == "COMPLETED":
                 audio_url = status_response.get("url") or status_response.get("audio_url")
                 if not audio_url:
                     raise GenerationError(
@@ -412,8 +461,13 @@ class AudixaClient:
                 logger.info(f"Generation completed: {audio_url}")
                 return audio_url
             
-            elif status == "Failed":
-                error_msg = status_response.get("error", "Unknown error")
+            elif status in {"FAILED", "EXPIRED"}:
+                error_msg = (
+                    status_response.get("error_message")
+                    or status_response.get("detail")
+                    or status_response.get("error")
+                    or "Unknown error"
+                )
                 raise GenerationError(
                     f"Generation failed: {error_msg}",
                     generation_id=generation_id,
@@ -427,16 +481,15 @@ class AudixaClient:
         self,
         text: str,
         filepath: str,
-        voice: str,
+        voice_id: str | None = None,
         model: Model = "base",
         speed: float = 1.0,
         poll_interval: float = DEFAULT_POLL_INTERVAL,
         timeout: float = DEFAULT_WAIT_TIMEOUT,
-        # Advance model parameters
-        emotion: Emotion | None = None,
-        temperature: float | None = None,
-        top_p: float | None = None,
-        do_sample: bool | None = None,
+        cfg_weight: float | None = None,
+        exaggeration: float | None = None,
+        audio_format: AudioFormat | None = None,
+        custom_endpoint_slug: str | None = None,
         **kwargs: Any,
     ) -> str:
         """
@@ -446,16 +499,16 @@ class AudixaClient:
         
         Args:
             text: The text to convert to speech.
-            filepath: Output file path. Must have .wav extension.
-            voice: The Voice ID to use for generation.
-            model: The model to use: "base" or "advance".
+            filepath: Output file path.
+            voice_id: The Voice ID to use for generation.
+            model: The model to use: "base" or "advanced".
             speed: Playback speed (0.5 to 2.0).
             poll_interval: Time between status checks in seconds.
             timeout: Maximum time to wait for completion in seconds.
-            emotion: (Advance model only) Emotion to apply.
-            temperature: (Advance model only) Controls randomness.
-            top_p: (Advance model only) Nucleus sampling.
-            do_sample: (Advance model only) Enable sampling.
+            cfg_weight: (Advanced model only) CFG weight.
+            exaggeration: (Advanced model only) Exaggeration.
+            audio_format: Output format ("wav" or "mp3").
+            custom_endpoint_slug: Optional custom endpoint slug to route this request.
             **kwargs: Additional parameters passed to the API.
             
         Returns:
@@ -471,25 +524,25 @@ class AudixaClient:
             >>> filepath = client.tts_to_file(
             ...     "Hello, welcome to Audixa!",
             ...     "output.wav",
-            ...     voice="am_ethan",
+            ...     voice_id="emma",
             ... )
             >>> print(f"Audio saved to: {filepath}")
         """
         # Validate output path
-        output_path = validate_output_filepath(filepath)
+        output_path = validate_output_filepath(filepath, format_name=audio_format)
         
         # Generate and wait for audio URL
         audio_url = self.tts_and_wait(
             text,
-            voice=voice,
+            voice_id=voice_id,
             model=model,
             speed=speed,
             poll_interval=poll_interval,
             timeout=timeout,
-            emotion=emotion,
-            temperature=temperature,
-            top_p=top_p,
-            do_sample=do_sample,
+            cfg_weight=cfg_weight,
+            exaggeration=exaggeration,
+            audio_format=audio_format,
+            custom_endpoint_slug=custom_endpoint_slug,
             **kwargs,
         )
         
@@ -498,20 +551,31 @@ class AudixaClient:
         
         return str(output_path)
     
-    def list_voices(self, model: Model = "base") -> list[dict[str, Any]]:
+    def list_voices(
+        self,
+        model: Model | None = None,
+        limit: int = 100,
+        offset: int = 0,
+        include_metadata: bool = False,
+    ) -> list[dict[str, Any]] | dict[str, Any]:
         """
         List available voices for a specific model.
         
         Args:
-            model: The model to fetch voices for: "base" or "advance".
+            model: Optional model filter: "base" or "advanced".
+            limit: Maximum number of results to return (1-500).
+            offset: Number of results to skip.
+            include_metadata: If True, return the full response with pagination.
         
         Returns:
             List of voice dictionaries, each containing:
             - voice_id: Voice ID for use in tts()
             - name: Display name
+            - model: Compatible model ("base" or "advanced")
             - gender: Voice gender (e.g., "Male", "Female")
             - accent: Voice accent (e.g., "American", "British")
             - free: Whether the voice is free tier
+            - is_custom: Whether this is a user-created voice
             - description: Voice description
             
         Example:
@@ -522,11 +586,41 @@ class AudixaClient:
         See Also:
             Audixa documentation: https://docs.audixa.ai/api/voices
         """
-        logger.debug(f"Fetching available voices for model: {model}")
-        response = self._request("GET", ENDPOINTS["voices"], params={"model": model})
+        params: dict[str, Any] = {"limit": limit, "offset": offset}
+        if model:
+            params["model"] = self._normalize_model(model)
+        logger.debug("Fetching available voices")
+        response = self._request("GET", ENDPOINTS["voices"], params=params)
+        if include_metadata:
+            return response
         voices = response.get("voices", [])
-        logger.info(f"Found {len(voices)} available voices for {model} model")
+        logger.info(f"Found {len(voices)} available voices")
         return voices
+
+    def history(
+        self,
+        limit: int = 20,
+        offset: int = 0,
+        status: str | None = None,
+        include_metadata: bool = False,
+    ) -> list[dict[str, Any]] | dict[str, Any]:
+        """
+        Retrieve generation history.
+        
+        Args:
+            limit: Maximum number of results to return (1-100).
+            offset: Number of results to skip.
+            status: Optional status filter (IN_QUEUE, GENERATING, COMPLETED, FAILED, EXPIRED).
+            include_metadata: If True, return the full response with pagination.
+        """
+        params: dict[str, Any] = {"limit": limit, "offset": offset}
+        if status:
+            params["status"] = status
+        response = self._request("GET", ENDPOINTS["history"], params=params)
+        if include_metadata:
+            return response
+        return response.get("history", [])
+
     
     def close(self) -> None:
         """Close the HTTP session."""

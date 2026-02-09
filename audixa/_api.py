@@ -11,11 +11,10 @@ from typing import Any, Literal
 
 from .async_client import AsyncAudixaClient
 from .client import AudixaClient
-from .config import get_config
+from .config import AudioFormat, get_config
 
 # Type aliases
-Model = Literal["base", "advance"]
-Emotion = Literal["neutral", "happy", "sad", "angry", "surprised"]
+Model = Literal["base", "advanced"]
 
 # =============================================================================
 # Default Client Singletons
@@ -47,13 +46,13 @@ def _get_default_async_client() -> AsyncAudixaClient:
 
 def tts(
     text: str,
-    voice: str,
+    voice_id: str | None = None,
     model: Model = "base",
     speed: float = 1.0,
-    emotion: Emotion | None = None,
-    temperature: float | None = None,
-    top_p: float | None = None,
-    do_sample: bool | None = None,
+    cfg_weight: float | None = None,
+    exaggeration: float | None = None,
+    audio_format: AudioFormat | None = None,
+    custom_endpoint_slug: str | None = None,
     **kwargs: Any,
 ) -> str:
     """
@@ -63,14 +62,14 @@ def tts(
     Use status() to check progress, or tts_and_wait() for convenience.
     
     Args:
-        text: The text to convert to speech. Must be at least 30 characters.
-        voice: The Voice ID (e.g., "am_ethan").
-        model: "base" or "advance". Defaults to "base".
+        text: The text to convert to speech.
+        voice_id: The Voice ID (e.g., "emma").
+        model: "base" or "advanced". Defaults to "base".
         speed: Playback speed (0.5 to 2.0). Defaults to 1.0.
-        emotion: (Advance only) "neutral", "happy", "sad", "angry", "surprised".
-        temperature: (Advance only) Randomness control (0.7-0.9).
-        top_p: (Advance only) Nucleus sampling (0.7-0.98).
-        do_sample: (Advance only) Enable sampling.
+        cfg_weight: (Advanced only) CFG weight.
+        exaggeration: (Advanced only) Exaggeration.
+        audio_format: Output format ("wav" or "mp3").
+        custom_endpoint_slug: Optional custom endpoint slug to route this request.
         
     Returns:
         The generation ID for tracking the request.
@@ -78,22 +77,22 @@ def tts(
     Example:
         >>> import audixa
         >>> audixa.set_api_key("your-key")
-        >>> gen_id = audixa.tts("Hello, world!", voice="am_ethan")
+        >>> gen_id = audixa.tts("Hello, world!", voice_id="emma")
     """
     return _get_default_client().tts(
         text,
-        voice=voice,
+        voice_id=voice_id,
         model=model,
         speed=speed,
-        emotion=emotion,
-        temperature=temperature,
-        top_p=top_p,
-        do_sample=do_sample,
+        cfg_weight=cfg_weight,
+        exaggeration=exaggeration,
+        audio_format=audio_format,
+        custom_endpoint_slug=custom_endpoint_slug,
         **kwargs,
     )
 
 
-def status(generation_id: str) -> dict[str, Any]:
+def status(generation_id: str, custom_endpoint_slug: str | None = None) -> dict[str, Any]:
     """
     Check the status of a TTS generation (synchronous).
     
@@ -107,20 +106,20 @@ def status(generation_id: str) -> dict[str, Any]:
         >>> status = audixa.status("gen_abc123")
         >>> print(status["status"])
     """
-    return _get_default_client().status(generation_id)
+    return _get_default_client().status(generation_id, custom_endpoint_slug=custom_endpoint_slug)
 
 
 def tts_and_wait(
     text: str,
-    voice: str,
+    voice_id: str | None = None,
     model: Model = "base",
     speed: float = 1.0,
     poll_interval: float | None = None,
     timeout: float | None = None,
-    emotion: Emotion | None = None,
-    temperature: float | None = None,
-    top_p: float | None = None,
-    do_sample: bool | None = None,
+    cfg_weight: float | None = None,
+    exaggeration: float | None = None,
+    audio_format: AudioFormat | None = None,
+    custom_endpoint_slug: str | None = None,
     **kwargs: Any,
 ) -> str:
     """
@@ -128,34 +127,34 @@ def tts_and_wait(
     
     Args:
         text: The text to convert to speech.
-        voice: The Voice ID (e.g., "am_ethan").
-        model: "base" or "advance".
+        voice_id: The Voice ID (e.g., "emma").
+        model: "base" or "advanced".
         speed: Playback speed (0.5 to 2.0).
         poll_interval: Time between status checks in seconds.
         timeout: Maximum time to wait in seconds.
-        emotion: (Advance only) Emotion to apply.
-        temperature: (Advance only) Randomness control.
-        top_p: (Advance only) Nucleus sampling.
-        do_sample: (Advance only) Enable sampling.
+        cfg_weight: (Advanced only) CFG weight.
+        exaggeration: (Advanced only) Exaggeration.
+        audio_format: Output format ("wav" or "mp3").
+        custom_endpoint_slug: Optional custom endpoint slug to route this request.
         
     Returns:
         The audio URL for the completed generation.
         
     Example:
-        >>> audio_url = audixa.tts_and_wait("Hello!", voice="am_ethan")
+        >>> audio_url = audixa.tts_and_wait("Hello!", voice_id="emma")
     """
     config = get_config()
     return _get_default_client().tts_and_wait(
         text,
-        voice=voice,
+        voice_id=voice_id,
         model=model,
         speed=speed,
         poll_interval=poll_interval or config.poll_interval,
         timeout=timeout or config.wait_timeout,
-        emotion=emotion,
-        temperature=temperature,
-        top_p=top_p,
-        do_sample=do_sample,
+        cfg_weight=cfg_weight,
+        exaggeration=exaggeration,
+        audio_format=audio_format,
+        custom_endpoint_slug=custom_endpoint_slug,
         **kwargs,
     )
 
@@ -163,15 +162,15 @@ def tts_and_wait(
 def tts_to_file(
     text: str,
     filepath: str,
-    voice: str,
+    voice_id: str | None = None,
     model: Model = "base",
     speed: float = 1.0,
     poll_interval: float | None = None,
     timeout: float | None = None,
-    emotion: Emotion | None = None,
-    temperature: float | None = None,
-    top_p: float | None = None,
-    do_sample: bool | None = None,
+    cfg_weight: float | None = None,
+    exaggeration: float | None = None,
+    audio_format: AudioFormat | None = None,
+    custom_endpoint_slug: str | None = None,
     **kwargs: Any,
 ) -> str:
     """
@@ -179,46 +178,54 @@ def tts_to_file(
     
     Args:
         text: The text to convert to speech.
-        filepath: Output file path. Must have .wav extension.
-        voice: The Voice ID (e.g., "am_ethan").
-        model: "base" or "advance".
+        filepath: Output file path.
+        voice_id: The Voice ID (e.g., "emma").
+        model: "base" or "advanced".
         speed: Playback speed (0.5 to 2.0).
         poll_interval: Time between status checks in seconds.
         timeout: Maximum time to wait in seconds.
-        emotion: (Advance only) Emotion to apply.
-        temperature: (Advance only) Randomness control.
-        top_p: (Advance only) Nucleus sampling.
-        do_sample: (Advance only) Enable sampling.
+        cfg_weight: (Advanced only) CFG weight.
+        exaggeration: (Advanced only) Exaggeration.
+        audio_format: Output format ("wav" or "mp3").
+        custom_endpoint_slug: Optional custom endpoint slug to route this request.
         
     Returns:
         The path to the saved audio file.
         
     Example:
-        >>> audixa.tts_to_file("Hello!", "output.wav", voice="am_ethan")
+        >>> audixa.tts_to_file("Hello!", "output.wav", voice_id="emma")
     """
     config = get_config()
     return _get_default_client().tts_to_file(
         text,
         filepath,
-        voice=voice,
+        voice_id=voice_id,
         model=model,
         speed=speed,
         poll_interval=poll_interval or config.poll_interval,
         timeout=timeout or config.wait_timeout,
-        emotion=emotion,
-        temperature=temperature,
-        top_p=top_p,
-        do_sample=do_sample,
+        cfg_weight=cfg_weight,
+        exaggeration=exaggeration,
+        audio_format=audio_format,
+        custom_endpoint_slug=custom_endpoint_slug,
         **kwargs,
     )
 
 
-def list_voices(model: Model = "base") -> list[dict[str, Any]]:
+def list_voices(
+    model: Model | None = None,
+    limit: int = 100,
+    offset: int = 0,
+    include_metadata: bool = False,
+) -> list[dict[str, Any]] | dict[str, Any]:
     """
     List available voices for a specific model (synchronous).
     
     Args:
-        model: The model to fetch voices for: "base" or "advance".
+        model: Optional model filter: "base" or "advanced".
+        limit: Maximum number of results to return (1-500).
+        offset: Number of results to skip.
+        include_metadata: If True, return the full response with pagination.
     
     Returns:
         List of voice dictionaries with voice_id, name, gender, accent, etc.
@@ -228,7 +235,35 @@ def list_voices(model: Model = "base") -> list[dict[str, Any]]:
         >>> for v in voices:
         ...     print(v["voice_id"], v["name"])
     """
-    return _get_default_client().list_voices(model=model)
+    return _get_default_client().list_voices(
+        model=model,
+        limit=limit,
+        offset=offset,
+        include_metadata=include_metadata,
+    )
+
+
+def history(
+    limit: int = 20,
+    offset: int = 0,
+    status: str | None = None,
+    include_metadata: bool = False,
+) -> list[dict[str, Any]] | dict[str, Any]:
+    """
+    Retrieve generation history (synchronous).
+    
+    Args:
+        limit: Maximum number of results to return (1-100).
+        offset: Number of results to skip.
+        status: Optional status filter (IN_QUEUE, GENERATING, COMPLETED, FAILED, EXPIRED).
+        include_metadata: If True, return the full response with pagination.
+    """
+    return _get_default_client().history(
+        limit=limit,
+        offset=offset,
+        status=status,
+        include_metadata=include_metadata,
+    )
 
 
 # =============================================================================
@@ -237,13 +272,13 @@ def list_voices(model: Model = "base") -> list[dict[str, Any]]:
 
 async def atts(
     text: str,
-    voice: str,
+    voice_id: str | None = None,
     model: Model = "base",
     speed: float = 1.0,
-    emotion: Emotion | None = None,
-    temperature: float | None = None,
-    top_p: float | None = None,
-    do_sample: bool | None = None,
+    cfg_weight: float | None = None,
+    exaggeration: float | None = None,
+    audio_format: AudioFormat | None = None,
+    custom_endpoint_slug: str | None = None,
     **kwargs: Any,
 ) -> str:
     """
@@ -251,34 +286,37 @@ async def atts(
     
     Args:
         text: The text to convert to speech.
-        voice: The Voice ID (e.g., "am_ethan").
-        model: "base" or "advance".
+        voice_id: The Voice ID (e.g., "emma").
+        model: "base" or "advanced".
         speed: Playback speed (0.5 to 2.0).
-        emotion: (Advance only) Emotion to apply.
-        temperature: (Advance only) Randomness control.
-        top_p: (Advance only) Nucleus sampling.
-        do_sample: (Advance only) Enable sampling.
+        cfg_weight: (Advanced only) CFG weight.
+        exaggeration: (Advanced only) Exaggeration.
+        audio_format: Output format ("wav" or "mp3").
+        custom_endpoint_slug: Optional custom endpoint slug to route this request.
         
     Returns:
         The generation ID for tracking the request.
         
     Example:
-        >>> gen_id = await audixa.atts("Hello!", voice="am_ethan")
+        >>> gen_id = await audixa.atts("Hello!", voice_id="emma")
     """
     return await _get_default_async_client().tts(
         text,
-        voice=voice,
+        voice_id=voice_id,
         model=model,
         speed=speed,
-        emotion=emotion,
-        temperature=temperature,
-        top_p=top_p,
-        do_sample=do_sample,
+        cfg_weight=cfg_weight,
+        exaggeration=exaggeration,
+        audio_format=audio_format,
+        custom_endpoint_slug=custom_endpoint_slug,
         **kwargs,
     )
 
 
-async def astatus(generation_id: str) -> dict[str, Any]:
+async def astatus(
+    generation_id: str,
+    custom_endpoint_slug: str | None = None,
+) -> dict[str, Any]:
     """
     Check the status of a TTS generation (asynchronous).
     
@@ -291,20 +329,22 @@ async def astatus(generation_id: str) -> dict[str, Any]:
     Example:
         >>> status = await audixa.astatus("gen_abc123")
     """
-    return await _get_default_async_client().status(generation_id)
+    return await _get_default_async_client().status(
+        generation_id, custom_endpoint_slug=custom_endpoint_slug
+    )
 
 
 async def atts_and_wait(
     text: str,
-    voice: str,
+    voice_id: str | None = None,
     model: Model = "base",
     speed: float = 1.0,
     poll_interval: float | None = None,
     timeout: float | None = None,
-    emotion: Emotion | None = None,
-    temperature: float | None = None,
-    top_p: float | None = None,
-    do_sample: bool | None = None,
+    cfg_weight: float | None = None,
+    exaggeration: float | None = None,
+    audio_format: AudioFormat | None = None,
+    custom_endpoint_slug: str | None = None,
     **kwargs: Any,
 ) -> str:
     """
@@ -312,34 +352,34 @@ async def atts_and_wait(
     
     Args:
         text: The text to convert to speech.
-        voice: The Voice ID (e.g., "am_ethan").
-        model: "base" or "advance".
+        voice_id: The Voice ID (e.g., "emma").
+        model: "base" or "advanced".
         speed: Playback speed (0.5 to 2.0).
         poll_interval: Time between status checks in seconds.
         timeout: Maximum time to wait in seconds.
-        emotion: (Advance only) Emotion to apply.
-        temperature: (Advance only) Randomness control.
-        top_p: (Advance only) Nucleus sampling.
-        do_sample: (Advance only) Enable sampling.
+        cfg_weight: (Advanced only) CFG weight.
+        exaggeration: (Advanced only) Exaggeration.
+        audio_format: Output format ("wav" or "mp3").
+        custom_endpoint_slug: Optional custom endpoint slug to route this request.
         
     Returns:
         The audio URL for the completed generation.
         
     Example:
-        >>> audio_url = await audixa.atts_and_wait("Hello!", voice="am_ethan")
+        >>> audio_url = await audixa.atts_and_wait("Hello!", voice_id="emma")
     """
     config = get_config()
     return await _get_default_async_client().tts_and_wait(
         text,
-        voice=voice,
+        voice_id=voice_id,
         model=model,
         speed=speed,
         poll_interval=poll_interval or config.poll_interval,
         timeout=timeout or config.wait_timeout,
-        emotion=emotion,
-        temperature=temperature,
-        top_p=top_p,
-        do_sample=do_sample,
+        cfg_weight=cfg_weight,
+        exaggeration=exaggeration,
+        audio_format=audio_format,
+        custom_endpoint_slug=custom_endpoint_slug,
         **kwargs,
     )
 
@@ -347,15 +387,15 @@ async def atts_and_wait(
 async def atts_to_file(
     text: str,
     filepath: str,
-    voice: str,
+    voice_id: str | None = None,
     model: Model = "base",
     speed: float = 1.0,
     poll_interval: float | None = None,
     timeout: float | None = None,
-    emotion: Emotion | None = None,
-    temperature: float | None = None,
-    top_p: float | None = None,
-    do_sample: bool | None = None,
+    cfg_weight: float | None = None,
+    exaggeration: float | None = None,
+    audio_format: AudioFormat | None = None,
+    custom_endpoint_slug: str | None = None,
     **kwargs: Any,
 ) -> str:
     """
@@ -363,51 +403,88 @@ async def atts_to_file(
     
     Args:
         text: The text to convert to speech.
-        filepath: Output file path. Must have .wav extension.
-        voice: The Voice ID (e.g., "am_ethan").
-        model: "base" or "advance".
+        filepath: Output file path.
+        voice_id: The Voice ID (e.g., "emma").
+        model: "base" or "advanced".
         speed: Playback speed (0.5 to 2.0).
         poll_interval: Time between status checks in seconds.
         timeout: Maximum time to wait in seconds.
-        emotion: (Advance only) Emotion to apply.
-        temperature: (Advance only) Randomness control.
-        top_p: (Advance only) Nucleus sampling.
-        do_sample: (Advance only) Enable sampling.
+        cfg_weight: (Advanced only) CFG weight.
+        exaggeration: (Advanced only) Exaggeration.
+        audio_format: Output format ("wav" or "mp3").
+        custom_endpoint_slug: Optional custom endpoint slug to route this request.
         
     Returns:
         The path to the saved audio file.
         
     Example:
-        >>> await audixa.atts_to_file("Hello!", "output.wav", voice="am_ethan")
+        >>> await audixa.atts_to_file("Hello!", "output.wav", voice_id="emma")
     """
     config = get_config()
     return await _get_default_async_client().tts_to_file(
         text,
         filepath,
-        voice=voice,
+        voice_id=voice_id,
         model=model,
         speed=speed,
         poll_interval=poll_interval or config.poll_interval,
         timeout=timeout or config.wait_timeout,
-        emotion=emotion,
-        temperature=temperature,
-        top_p=top_p,
-        do_sample=do_sample,
+        cfg_weight=cfg_weight,
+        exaggeration=exaggeration,
+        audio_format=audio_format,
+        custom_endpoint_slug=custom_endpoint_slug,
         **kwargs,
     )
 
 
-async def alist_voices(model: Model = "base") -> list[dict[str, Any]]:
+async def alist_voices(
+    model: Model | None = None,
+    limit: int = 100,
+    offset: int = 0,
+    include_metadata: bool = False,
+) -> list[dict[str, Any]] | dict[str, Any]:
     """
     List available voices for a specific model (asynchronous).
     
     Args:
-        model: The model to fetch voices for: "base" or "advance".
+        model: Optional model filter: "base" or "advanced".
+        limit: Maximum number of results to return (1-500).
+        offset: Number of results to skip.
+        include_metadata: If True, return the full response with pagination.
     
     Returns:
         List of voice dictionaries with voice_id, name, gender, accent, etc.
         
     Example:
-        >>> voices = await audixa.alist_voices(model="advance")
+        >>> voices = await audixa.alist_voices(model="advanced")
     """
-    return await _get_default_async_client().list_voices(model=model)
+    return await _get_default_async_client().list_voices(
+        model=model,
+        limit=limit,
+        offset=offset,
+        include_metadata=include_metadata,
+    )
+
+
+async def ahistory(
+    limit: int = 20,
+    offset: int = 0,
+    status: str | None = None,
+    include_metadata: bool = False,
+) -> list[dict[str, Any]] | dict[str, Any]:
+    """
+    Retrieve generation history (asynchronous).
+    
+    Args:
+        limit: Maximum number of results to return (1-100).
+        offset: Number of results to skip.
+        status: Optional status filter (IN_QUEUE, GENERATING, COMPLETED, FAILED, EXPIRED).
+        include_metadata: If True, return the full response with pagination.
+    """
+    return await _get_default_async_client().history(
+        limit=limit,
+        offset=offset,
+        status=status,
+        include_metadata=include_metadata,
+    )
+

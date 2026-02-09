@@ -18,9 +18,9 @@ import aiohttp
 import requests
 
 from .config import (
+    DEFAULT_FORMAT,
     FORMAT_EXTENSIONS,
     SUPPORTED_FORMATS,
-    AudioFormat,
     is_format_supported,
 )
 from .exceptions import (
@@ -190,7 +190,7 @@ async def retry_async_operation(
 # File Operations
 # =============================================================================
 
-def validate_output_filepath(filepath: str | Path) -> Path:
+def validate_output_filepath(filepath: str | Path, format_name: str | None = None) -> Path:
     """
     Validate and normalize output file path.
     
@@ -200,6 +200,7 @@ def validate_output_filepath(filepath: str | Path) -> Path:
     
     Args:
         filepath: The output file path.
+        format_name: Optional audio format to use when no extension is provided.
         
     Returns:
         Normalized Path object.
@@ -213,16 +214,22 @@ def validate_output_filepath(filepath: str | Path) -> Path:
     
     # Check if extension is supported
     if extension:
-        format_name = extension.lstrip(".")
-        if not is_format_supported(format_name):
+        ext_format = extension.lstrip(".")
+        if not is_format_supported(ext_format):
             raise UnsupportedFormatError(
-                requested_format=format_name,
+                requested_format=ext_format,
                 supported_formats=SUPPORTED_FORMATS,
             )
     else:
-        # No extension provided, add default
-        path = path.with_suffix(FORMAT_EXTENSIONS["wav"])
-        logger.debug(f"No extension provided, using default: {path}")
+        # No extension provided, add default or requested format
+        target_format = format_name or DEFAULT_FORMAT
+        if not is_format_supported(target_format):
+            raise UnsupportedFormatError(
+                requested_format=target_format,
+                supported_formats=SUPPORTED_FORMATS,
+            )
+        path = path.with_suffix(FORMAT_EXTENSIONS[target_format])
+        logger.debug(f"No extension provided, using {target_format}: {path}")
     
     # Ensure parent directory exists
     path.parent.mkdir(parents=True, exist_ok=True)

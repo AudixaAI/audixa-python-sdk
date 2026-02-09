@@ -178,7 +178,7 @@ class GenerationError(AudixaError):
     
     Example:
         >>> try:
-        ...     audixa.tts_and_wait("Hello", voice="invalid")
+        ...     audixa.tts_and_wait("Hello", voice_id="invalid")
         ... except audixa.GenerationError as e:
         ...     print(f"Generation {e.generation_id} failed: {e.message}")
     """
@@ -198,8 +198,7 @@ class UnsupportedFormatError(AudixaError):
     """
     Raised when an unsupported audio format is requested.
     
-    Currently, Audixa only supports WAV format. This error is raised
-    when attempting to use other formats.
+    This error is raised when attempting to use an unsupported format.
     
     Attributes:
         requested_format: The format that was requested.
@@ -207,7 +206,7 @@ class UnsupportedFormatError(AudixaError):
     
     Example:
         >>> try:
-        ...     audixa.tts_to_file("Hello", "output.mp3")  # MP3 not supported
+        ...     audixa.tts_to_file("Hello", "output.ogg")  # OGG not supported
         ... except audixa.UnsupportedFormatError as e:
         ...     print(f"Use one of: {e.supported_formats}")
     """
@@ -218,7 +217,7 @@ class UnsupportedFormatError(AudixaError):
         supported_formats: tuple[str, ...] | None = None,
     ) -> None:
         self.requested_format = requested_format
-        self.supported_formats = supported_formats or ("wav",)
+        self.supported_formats = supported_formats or ("wav", "mp3")
         message = (
             f"Unsupported audio format: '{requested_format}'. "
             f"Supported formats: {', '.join(self.supported_formats)}"

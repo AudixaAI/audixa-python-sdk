@@ -12,6 +12,13 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 # =============================================================================
+# SDK Version
+# =============================================================================
+
+SDK_VERSION: str = "0.3.0"
+"""Current SDK version."""
+
+# =============================================================================
 # Audio Format Configuration (Extensibility Point)
 # =============================================================================
 # To add new formats in the future:
@@ -20,21 +27,21 @@ from typing import Literal
 # 3. Add corresponding MIME type to FORMAT_MIME_TYPES
 # 4. Add file extension to FORMAT_EXTENSIONS
 
-SUPPORTED_FORMATS: tuple[str, ...] = ("wav",)
+SUPPORTED_FORMATS: tuple[str, ...] = ("wav", "mp3")
 """Currently supported audio output formats."""
 
-AudioFormat = Literal["wav"]
+AudioFormat = Literal["wav", "mp3"]
 """Type alias for supported audio formats. Update when adding new formats."""
 
 FORMAT_MIME_TYPES: dict[str, str] = {
     "wav": "audio/wav",
-    # Future: "mp3": "audio/mpeg", "ogg": "audio/ogg", "flac": "audio/flac"
+    "mp3": "audio/mpeg",
 }
 """MIME types for each supported format."""
 
 FORMAT_EXTENSIONS: dict[str, str] = {
     "wav": ".wav",
-    # Future: "mp3": ".mp3", "ogg": ".ogg", "flac": ".flac"
+    "mp3": ".mp3",
 }
 """File extensions for each supported format."""
 
@@ -46,8 +53,8 @@ DEFAULT_FORMAT: AudioFormat = "wav"
 # API Configuration
 # =============================================================================
 
-DEFAULT_BASE_URL: str = "https://api.audixa.ai/v2"
-"""Default Audixa API base URL."""
+DEFAULT_BASE_URL: str = "https://api.audixa.ai"
+"""Default Audixa API base URL (no version suffix)."""
 
 DEFAULT_TIMEOUT: float = 30.0
 """Default HTTP request timeout in seconds."""
@@ -70,11 +77,13 @@ DEFAULT_MAX_CONCURRENCY: int = 10
 # =============================================================================
 
 ENDPOINTS: dict[str, str] = {
-    "tts": "/tts",
-    "status": "/status",
-    "voices": "/voices",
+    "tts": "/v3/tts",
+    "voices": "/v3/voices",
+    "history": "/v3/history",
+    "custom_tts": "/v3/custom/{slug}/tts",
+    "custom_generation": "/v3/custom/{slug}/generations/{generation_id}",
 }
-"""API endpoint paths."""
+"""API endpoint paths for v3."""
 
 
 # =============================================================================
@@ -95,6 +104,7 @@ class GlobalConfig:
         timeout: Default request timeout.
         max_retries: Maximum retry attempts.
         default_format: Default audio output format.
+        custom_endpoint_slug: Optional custom endpoint slug for dedicated routing.
     """
     api_key: str | None = field(default=None)
     base_url: str = field(default=DEFAULT_BASE_URL)
@@ -104,6 +114,7 @@ class GlobalConfig:
     poll_interval: float = field(default=DEFAULT_POLL_INTERVAL)
     wait_timeout: float = field(default=DEFAULT_WAIT_TIMEOUT)
     max_concurrency: int = field(default=DEFAULT_MAX_CONCURRENCY)
+    custom_endpoint_slug: str | None = field(default=None)
     
     def get_api_key(self) -> str | None:
         """Get API key, falling back to environment variable."""
@@ -138,13 +149,27 @@ def set_base_url(base_url: str) -> None:
     Set the global API base URL.
     
     Args:
-        base_url: The API base URL (e.g., "https://api.audixa.ai/v2").
+        base_url: The API base URL (e.g., "https://api.audixa.ai").
         
     Example:
         >>> import audixa
-        >>> audixa.set_base_url("https://api.audixa.ai/v2")
+        >>> audixa.set_base_url("https://api.audixa.ai")
     """
     _config.base_url = base_url.rstrip("/")
+
+
+def set_custom_endpoint_slug(slug: str | None) -> None:
+    """
+    Set a custom endpoint slug for dedicated enterprise routing.
+    
+    Args:
+        slug: The custom endpoint slug (e.g., "client1"), or None to disable.
+        
+    Example:
+        >>> import audixa
+        >>> audixa.set_custom_endpoint_slug("client1")
+    """
+    _config.custom_endpoint_slug = slug or None
 
 
 def is_format_supported(format_name: str) -> bool:

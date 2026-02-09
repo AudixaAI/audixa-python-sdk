@@ -4,3 +4,4 @@ dist
 audixa/__pycache__
 examples
 .env
+test.py
